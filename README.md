@@ -1,2 +1,1 @@
-# blnq-untitled-projectsdfadsfsd
-Created with Blnq Studio
+# Blnq Project
