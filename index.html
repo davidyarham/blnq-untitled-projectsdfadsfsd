@@ -5,400 +5,156 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Untitled</title>
   <link rel="stylesheet" href="style.css">
-
-<link rel="stylesheet" href="https://yi.uat.digital.mss.uk.hsbc/cib-ui-toolkit/css/index.css" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neural Network Playground</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
 </head>
 <body>
-
-<!-- TOP NAV BAR -->
-<header class="ts-topbar">
-  <div class="ts-topbar__left">
-    <div class="ts-logo">
-      <span class="ts-logo__mark">■</span>
-      <span class="ts-logo__name">BlnqTrade</span>
-      <span class="ts-logo__env">LIVE</span>
+<div class="app">
+  <!-- Header -->
+  <header class="header">
+    <div class="header__logo">
+      <i data-lucide="brain-circuit"></i>
+      <span>Neural Network Playground</span>
     </div>
-    <nav class="ts-topnav">
-      <button class="ts-topnav__item ts-topnav__item--active">Equities</button>
-      <button class="ts-topnav__item">FX</button>
-      <button class="ts-topnav__item">Fixed Income</button>
-      <button class="ts-topnav__item">Derivatives</button>
-      <button class="ts-topnav__item">Commodities</button>
-    </nav>
-  </div>
-  <div class="ts-topbar__center">
-    <div class="ts-ticker-strip" id="tickerStrip"></div>
-  </div>
-  <div class="ts-topbar__right">
-    <div class="ts-session">
-      <span class="ts-session__label">Session</span>
-      <span class="ts-session__time" id="sessionTime">--:--:--</span>
-    </div>
-    <div class="ts-session__market">
-      <span class="ts-dot ts-dot--green"></span>
-      <span>NYSE Open</span>
-    </div>
-    <div class="ts-session__market">
-      <span class="ts-dot ts-dot--red"></span>
-      <span>LSE Closed</span>
-    </div>
-    <div class="ts-user">
-      <i data-lucide="user" class="ts-icon-sm"></i>
-      <span>J. Morgan</span>
-      <span class="ts-user__desk">EQ-NYC-01</span>
-    </div>
-    <button class="ts-icon-btn" aria-label="Settings"><i data-lucide="settings" class="ts-icon-sm"></i></button>
-    <button class="ts-icon-btn" aria-label="Alerts — 3 notifications"><i data-lucide="bell" class="ts-icon-sm"></i><span class="ts-badge" aria-hidden="true">3</span></button>
-  </div>
-</header>
+    <div class="header__badge">XOR Classifier</div>
+  </header>
 
-<!-- MAIN TRADING LAYOUT -->
-<main class="ts-main">
+  <!-- Main Layout -->
+  <main class="main">
 
-  <!-- LEFT PANEL: WATCHLIST + POSITIONS -->
-  <aside class="ts-panel ts-panel--left">
-    <!-- Watchlist -->
-    <div class="ts-widget">
-      <div class="ts-widget__header">
-        <span class="ts-widget__title">Watchlist</span>
-        <div class="ts-widget__actions">
-          <button class="ts-icon-btn" aria-label="Add symbol"><i data-lucide="plus" class="ts-icon-sm"></i></button>
-          <button class="ts-icon-btn" aria-label="Filter watchlist"><i data-lucide="filter" class="ts-icon-sm"></i></button>
+    <!-- LEFT: Network Visualizer -->
+    <section class="panel panel--network" aria-label="Network Visualizer">
+      <div class="panel__header">
+        <i data-lucide="cpu"></i>
+        <h2>Network Architecture</h2>
+        <span class="panel__sub">2 → 4 → 1</span>
+      </div>
+      <canvas id="network-canvas" width="480" height="340" aria-label="Neural network diagram"></canvas>
+      <div class="activations-row">
+        <div class="activation-pill" id="act-00">
+          <span class="act-label">x₁=0, x₂=0</span>
+          <span class="act-output" id="out-00">—</span>
+        </div>
+        <div class="activation-pill" id="act-01">
+          <span class="act-label">x₁=0, x₂=1</span>
+          <span class="act-output" id="out-01">—</span>
+        </div>
+        <div class="activation-pill" id="act-10">
+          <span class="act-label">x₁=1, x₂=0</span>
+          <span class="act-output" id="out-10">—</span>
+        </div>
+        <div class="activation-pill" id="act-11">
+          <span class="act-label">x₁=1, x₂=1</span>
+          <span class="act-output" id="out-11">—</span>
         </div>
       </div>
-      <div class="ts-search-bar">
-        <i data-lucide="search" class="ts-icon-sm ts-search-icon"></i>
-        <input type="text" placeholder="Search symbol..." class="ts-search-input" id="symbolSearch" />
-      </div>
-      <table class="ts-table ts-watchlist" id="watchlistTable">
-        <thead>
-          <tr>
-            <th>Symbol</th>
-            <th class="ts-num">Last</th>
-            <th class="ts-num">Chg%</th>
-            <th class="ts-num">Vol</th>
-          </tr>
-        </thead>
-        <tbody id="watchlistBody"></tbody>
-      </table>
-    </div>
+    </section>
 
-    <!-- Positions -->
-    <div class="ts-widget ts-widget--grow">
-      <div class="ts-widget__header">
-        <span class="ts-widget__title">Positions</span>
-        <div class="ts-pnl-total">
-          <span class="ts-pnl-label">Day P&L</span>
-          <span class="ts-pnl-value ts-positive" id="totalPnl">+$0</span>
-        </div>
-      </div>
-      <table class="ts-table" id="positionsTable">
-        <thead>
-          <tr>
-            <th>Symbol</th>
-            <th class="ts-num">Qty</th>
-            <th class="ts-num">Avg</th>
-            <th class="ts-num">P&L</th>
-          </tr>
-        </thead>
-        <tbody id="positionsBody"></tbody>
-      </table>
-    </div>
-  </aside>
-
-  <!-- CENTER: CHART + ORDER BOOK -->
-  <section class="ts-panel ts-panel--center">
-    <!-- Chart Header -->
-    <div class="ts-chart-header">
-      <div class="ts-chart-header__left">
-        <div class="ts-instrument-info" id="instrumentInfo">
-          <span class="ts-instrument-ticker" id="activeSymbol">AAPL</span>
-          <span class="ts-instrument-name" id="activeName">Apple Inc.</span>
-          <span class="ts-instrument-price" id="activePrice">--</span>
-          <span class="ts-instrument-change" id="activeChange">--</span>
-        </div>
-        <div class="ts-ohlc" id="ohlcBar">
-          <span>O: <b id="oOpen">--</b></span>
-          <span>H: <b id="oHigh">--</b></span>
-          <span>L: <b id="oLow">--</b></span>
-          <span>C: <b id="oClose">--</b></span>
-          <span>Vol: <b id="oVol">--</b></span>
-        </div>
-      </div>
-      <div class="ts-chart-header__right">
-        <div class="ts-timeframes">
-          <button class="ts-tf-btn" data-tf="1m">1m</button>
-          <button class="ts-tf-btn" data-tf="5m">5m</button>
-          <button class="ts-tf-btn ts-tf-btn--active" data-tf="15m">15m</button>
-          <button class="ts-tf-btn" data-tf="1h">1H</button>
-          <button class="ts-tf-btn" data-tf="1d">1D</button>
-          <button class="ts-tf-btn" data-tf="1w">1W</button>
-        </div>
-        <div class="ts-chart-types">
-          <button class="ts-icon-btn ts-icon-btn--active" id="chartTypeLine" aria-label="Line chart"><i data-lucide="trending-up" class="ts-icon-sm"></i></button>
-          <button class="ts-icon-btn" id="chartTypeBar" aria-label="Bar chart"><i data-lucide="bar-chart-2" class="ts-icon-sm"></i></button>
-          <button class="ts-icon-btn" id="chartTypeArea" aria-label="Area chart"><i data-lucide="area-chart" class="ts-icon-sm"></i></button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Price Chart -->
-    <div class="ts-chart-container">
-      <canvas id="priceChart"></canvas>
-    </div>
-
-    <!-- Volume Chart -->
-    <div class="ts-volume-container">
-      <canvas id="volumeChart"></canvas>
-    </div>
-
-    <!-- Order Book + Trade Tape -->
-    <div class="ts-bottom-center">
-      <!-- Order Book -->
-      <div class="ts-widget ts-orderbook">
-        <div class="ts-widget__header">
-          <span class="ts-widget__title">Order Book</span>
-          <span class="ts-spread-badge" id="spreadBadge">Spread: --</span>
-        </div>
-        <div class="ts-orderbook__cols">
-          <div class="ts-orderbook__side ts-orderbook__side--ask">
-            <div class="ts-ob-head"><span>Size</span><span>Price</span></div>
-            <div id="askBook"></div>
-          </div>
-          <div class="ts-orderbook__mid" id="midPrice">--</div>
-          <div class="ts-orderbook__side ts-orderbook__side--bid">
-            <div class="ts-ob-head"><span>Price</span><span>Size</span></div>
-            <div id="bidBook"></div>
-          </div>
-        </div>
+    <!-- CENTER: Controls + Decision Boundary -->
+    <section class="panel panel--controls" aria-label="Controls">
+      <div class="panel__header">
+        <i data-lucide="sliders-horizontal"></i>
+        <h2>Training Controls</h2>
       </div>
 
-      <!-- Trade Tape -->
-      <div class="ts-widget ts-tradetape">
-        <div class="ts-widget__header">
-          <span class="ts-widget__title">Time & Sales</span>
-          <span class="ts-tape-filter">All</span>
+      <div class="controls-grid">
+        <div class="control-group">
+          <label for="lr-slider">Learning Rate <span class="mono" id="lr-val">0.1</span></label>
+          <input type="range" id="lr-slider" min="0.001" max="1" step="0.001" value="0.1" aria-label="Learning rate">
         </div>
-        <div class="ts-tape-head">
-          <span>Time</span><span>Price</span><span>Size</span><span>Side</span>
+        <div class="control-group">
+          <label for="hidden-slider">Hidden Neurons <span class="mono" id="hidden-val">4</span></label>
+          <input type="range" id="hidden-slider" min="2" max="8" step="1" value="4" aria-label="Hidden neurons">
         </div>
-        <div class="ts-tape-body" id="tradeTape"></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- RIGHT PANEL: ORDER ENTRY + BLOTTER -->
-  <aside class="ts-panel ts-panel--right">
-    <!-- Order Entry -->
-    <div class="ts-widget ts-order-entry">
-      <div class="ts-widget__header">
-        <span class="ts-widget__title">Order Entry</span>
-        <span class="ts-risk-status ts-risk-ok" id="riskStatus">
-          <i data-lucide="shield-check" class="ts-icon-sm"></i> Pre-Trade OK
-        </span>
-      </div>
-
-      <!-- Buy/Sell Toggle -->
-      <div class="ts-side-toggle">
-        <button class="ts-side-btn ts-side-btn--buy ts-side-btn--active" id="btnBuy">BUY</button>
-        <button class="ts-side-btn ts-side-btn--sell" id="btnSell">SELL</button>
-      </div>
-
-      <!-- Symbol Row -->
-      <div class="ts-field-row">
-        <label class="ts-label">Symbol</label>
-        <div class="ts-input-group">
-          <input type="text" class="ts-input ts-input--symbol" id="orderSymbol" value="AAPL" />
-          <input type="text" class="ts-input ts-input--name ts-text-dim" id="orderName" value="Apple Inc." readonly />
-        </div>
-      </div>
-
-      <!-- Order Type -->
-      <div class="ts-field-row">
-        <label class="ts-label">Order Type</label>
-        <select class="ts-select" id="orderType">
-          <option value="market">Market</option>
-          <option value="limit" selected>Limit</option>
-          <option value="stop">Stop</option>
-          <option value="stop_limit">Stop Limit</option>
-          <option value="twap">TWAP</option>
-          <option value="vwap">VWAP</option>
-          <option value="iceberg">Iceberg</option>
-        </select>
-      </div>
-
-      <!-- Quantity + Price -->
-      <div class="ts-field-row ts-field-row--2col">
-        <div>
-          <label class="ts-label">Quantity</label>
-          <input type="number" class="ts-input ts-input--mono" id="orderQty" value="1000" min="1" />
-        </div>
-        <div>
-          <label class="ts-label">Limit Price</label>
-          <input type="number" class="ts-input ts-input--mono" id="orderPrice" step="0.01" value="0" />
-        </div>
-      </div>
-
-      <!-- TIF + Account -->
-      <div class="ts-field-row ts-field-row--2col">
-        <div>
-          <label class="ts-label">TIF</label>
-          <select class="ts-select" id="orderTIF">
-            <option>Day</option>
-            <option>GTC</option>
-            <option>IOC</option>
-            <option>FOK</option>
-            <option>GTD</option>
-          </select>
-        </div>
-        <div>
-          <label class="ts-label">Destination</label>
-          <select class="ts-select" id="orderDest">
-            <option>NYSE</option>
-            <option>NASDAQ</option>
-            <option>LSE</option>
-            <option>DMA</option>
-            <option>Dark Pool</option>
+        <div class="control-group">
+          <label for="activation-select">Activation</label>
+          <select id="activation-select" aria-label="Activation function">
+            <option value="sigmoid">Sigmoid</option>
+            <option value="tanh">Tanh</option>
+            <option value="relu">ReLU</option>
           </select>
         </div>
       </div>
 
-      <!-- Notional -->
-      <div class="ts-notional-bar">
-        <span class="ts-notional-label">Notional</span>
-        <span class="ts-notional-value" id="notionalValue">$0</span>
-        <span class="ts-notional-label">Buying Power</span>
-        <span class="ts-notional-value ts-positive" id="buyingPower">$12,450,000</span>
-      </div>
-
-      <!-- Risk Meters -->
-      <div class="ts-risk-bars">
-        <div class="ts-risk-bar-row">
-          <span class="ts-risk-bar-label">Risk Usage</span>
-          <div class="ts-progress-track"><div class="ts-progress-fill ts-progress-fill--ok" id="riskBar" style="width:34%"></div></div>
-          <span class="ts-risk-bar-pct" id="riskPct">34%</span>
-        </div>
-        <div class="ts-risk-bar-row">
-          <span class="ts-risk-bar-label">Position Limit</span>
-          <div class="ts-progress-track"><div class="ts-progress-fill ts-progress-fill--warn" id="posBar" style="width:61%"></div></div>
-          <span class="ts-risk-bar-pct" id="posPct">61%</span>
-        </div>
-      </div>
-
-      <!-- Submit Button -->
-      <div class="ts-order-actions">
-        <button class="ts-btn-order ts-btn-order--buy" id="submitOrder">
-          <i data-lucide="zap" class="ts-icon-sm"></i>
-          <span id="submitLabel">BUY 1,000 AAPL</span>
+      <div class="btn-row">
+        <button class="btn btn--primary" id="btn-train" aria-label="Start training">
+          <i data-lucide="play"></i> Train
         </button>
-        <button class="ts-btn-flat" id="clearOrder">Clear</button>
+        <button class="btn btn--ghost" id="btn-step" aria-label="Step one epoch">
+          <i data-lucide="skip-forward"></i> Step
+        </button>
+        <button class="btn btn--danger" id="btn-reset" aria-label="Reset network">
+          <i data-lucide="rotate-ccw"></i> Reset
+        </button>
       </div>
-    </div>
 
-    <!-- Orders Blotter -->
-    <div class="ts-widget ts-widget--grow">
-      <div class="ts-widget__header">
-        <span class="ts-widget__title">Orders</span>
-        <div class="ts-tabs-mini">
-          <button class="ts-tab-mini ts-tab-mini--active" data-tab="open">Open</button>
-          <button class="ts-tab-mini" data-tab="filled">Filled</button>
-          <button class="ts-tab-mini" data-tab="cancelled">Cancelled</button>
+      <div class="stats-bar">
+        <div class="stat">
+          <span class="stat__label">Epoch</span>
+          <span class="stat__value mono" id="stat-epoch">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat__label">Loss</span>
+          <span class="stat__value mono" id="stat-loss">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat__label">Accuracy</span>
+          <span class="stat__value mono" id="stat-acc">—</span>
         </div>
       </div>
-      <div class="ts-blotter-body" id="blotterBody">
-        <table class="ts-table ts-blotter-table">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Sym</th>
-              <th>Side</th>
-              <th>Type</th>
-              <th>Qty</th>
-              <th>Price</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="blotterOpen"></tbody>
-        </table>
-      </div>
-    </div>
 
-    <!-- Risk Summary -->
-    <div class="ts-widget ts-risk-widget">
-      <div class="ts-widget__header">
-        <span class="ts-widget__title">Risk Summary</span>
-        <span class="ts-risk-limit-badge">Desk: EQ-NYC-01</span>
+      <!-- Decision Boundary Canvas -->
+      <div class="panel__header" style="margin-top:1rem">
+        <i data-lucide="grid-3x3"></i>
+        <h2>Decision Boundary</h2>
       </div>
-      <div class="ts-risk-grid">
-        <div class="ts-risk-card">
-          <span class="ts-risk-card__label">Gross Exposure</span>
-          <span class="ts-risk-card__value" id="grossExp">$8.2M</span>
-        </div>
-        <div class="ts-risk-card">
-          <span class="ts-risk-card__label">Net Exposure</span>
-          <span class="ts-risk-card__value" id="netExp">$3.1M</span>
-        </div>
-        <div class="ts-risk-card">
-          <span class="ts-risk-card__label">VaR (1d 95%)</span>
-          <span class="ts-risk-card__value ts-negative" id="varVal">-$142K</span>
-        </div>
-        <div class="ts-risk-card">
-          <span class="ts-risk-card__label">Beta</span>
-          <span class="ts-risk-card__value" id="betaVal">1.12</span>
-        </div>
-        <div class="ts-risk-card">
-          <span class="ts-risk-card__label">Delta</span>
-          <span class="ts-risk-card__value" id="deltaVal">+0.87</span>
-        </div>
-        <div class="ts-risk-card">
-          <span class="ts-risk-card__label">Sharpe</span>
-          <span class="ts-risk-card__value ts-positive" id="sharpeVal">1.84</span>
-        </div>
+      <canvas id="boundary-canvas" width="260" height="260" aria-label="Decision boundary heatmap"></canvas>
+      <!-- XOR Points Legend -->
+      <div class="legend-row">
+        <span class="legend-dot legend-dot--zero"></span><span>XOR = 0</span>
+        <span class="legend-dot legend-dot--one"></span><span>XOR = 1</span>
       </div>
-    </div>
-  </aside>
-</main>
+    </section>
 
-<!-- Status Bar -->
-<footer class="ts-statusbar">
-  <div class="ts-statusbar__left">
-    <span class="ts-status-item"><i data-lucide="activity" class="ts-icon-xs"></i> System: <b class="ts-positive">Online</b></span>
-    <span class="ts-status-item"><i data-lucide="wifi" class="ts-icon-xs"></i> Latency: <b id="latency">2ms</b></span>
-    <span class="ts-status-item"><i data-lucide="server" class="ts-icon-xs"></i> FIX: <b class="ts-positive">Connected</b></span>
-    <span class="ts-status-item"><i data-lucide="database" class="ts-icon-xs"></i> MDS: <b class="ts-positive">Live</b></span>
-  </div>
-  <div class="ts-statusbar__right">
-    <span class="ts-status-item" id="orderCount">Orders Today: <b>0</b></span>
-    <span class="ts-status-item" id="fillCount">Fills: <b>0</b></span>
-    <span class="ts-status-item">Trader: <b>J. Morgan</b></span>
-    <span class="ts-status-item">Book: <b>EQ-PROP-A</b></span>
-  </div>
-</footer>
+    <!-- RIGHT: Loss Chart -->
+    <section class="panel panel--chart" aria-label="Loss Chart">
+      <div class="panel__header">
+        <i data-lucide="trending-down"></i>
+        <h2>Training Loss</h2>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="loss-chart" aria-label="Loss over epochs chart"></canvas>
+      </div>
 
-<!-- Order Confirmation Modal -->
-<div class="ts-modal-overlay" id="confirmModal" style="display:none">
-  <div class="ts-modal">
-    <div class="ts-modal__header">
-      <span class="ts-modal__title">Confirm Order</span>
-      <button class="ts-icon-btn" id="closeModal" aria-label="Close modal"><i data-lucide="x" class="ts-icon-sm"></i></button>
-    </div>
-    <div class="ts-modal__body" id="modalBody"></div>
-    <div class="ts-modal__footer">
-      <button class="ts-btn-secondary" id="cancelModal">Cancel</button>
-      <button class="ts-btn-primary" id="confirmOrderBtn">Confirm &amp; Send</button>
-    </div>
-  </div>
+      <div class="panel__header" style="margin-top:1.25rem">
+        <i data-lucide="table-2"></i>
+        <h2>Truth Table</h2>
+      </div>
+      <table class="truth-table" aria-label="XOR truth table with predictions">
+        <thead>
+          <tr><th>x₁</th><th>x₂</th><th>Target</th><th>Predicted</th><th></th></tr>
+        </thead>
+        <tbody id="truth-table-body">
+          <tr><td>0</td><td>0</td><td>0</td><td class="pred" id="pred-00">—</td><td class="verdict" id="verd-00"></td></tr>
+          <tr><td>0</td><td>1</td><td>1</td><td class="pred" id="pred-01">—</td><td class="verdict" id="verd-01"></td></tr>
+          <tr><td>1</td><td>0</td><td>1</td><td class="pred" id="pred-10">—</td><td class="verdict" id="verd-10"></td></tr>
+          <tr><td>1</td><td>1</td><td>0</td><td class="pred" id="pred-11">—</td><td class="verdict" id="verd-11"></td></tr>
+        </tbody>
+      </table>
+
+      <div class="speed-control">
+        <label for="speed-slider"><i data-lucide="zap"></i> Speed</label>
+        <input type="range" id="speed-slider" min="1" max="50" step="1" value="5" aria-label="Training speed">
+        <span class="mono" id="speed-val">5×</span>
+      </div>
+    </section>
+  </main>
 </div>
-
-<!-- Toast Notification -->
-<div class="ts-toast" id="toast" style="display:none"></div>
 
   <script type="module" src="main.js"></script>
 </body>

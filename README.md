@@ -1,3 +1,3 @@
-# HSBC CIB Trading System
+# Neural Network Playground
 
-Created with [Blnq Studio](https://blnq.studio/e/fJdWq7d)
+Created with [Blnq Studio](https://blnq.studio/e/qesHYUH)

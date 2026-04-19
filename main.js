@@ -1,764 +1,537 @@
+// ── XOR Dataset ──
+const XOR_DATA = [
+  { input: [0, 0], target: 0 },
+  { input: [0, 1], target: 1 },
+  { input: [1, 0], target: 1 },
+  { input: [1, 1], target: 0 },
+];
 
-'use strict';
-
-// ─── MARKET DATA ENGINE ────────────────────────────────────────────────────────
-const INSTRUMENTS = {
-  AAPL:  { name: 'Apple Inc.',            price: 189.45, vol: 0.018, sector: 'Tech' },
-  MSFT:  { name: 'Microsoft Corp.',       price: 415.30, vol: 0.015, sector: 'Tech' },
-  GOOGL: { name: 'Alphabet Inc.',         price: 175.80, vol: 0.019, sector: 'Tech' },
-  AMZN:  { name: 'Amazon.com Inc.',       price: 198.60, vol: 0.022, sector: 'Tech' },
-  JPM:   { name: 'JPMorgan Chase',        price: 215.40, vol: 0.014, sector: 'Finance' },
-  GS:    { name: 'Goldman Sachs',         price: 502.10, vol: 0.017, sector: 'Finance' },
-  MS:    { name: 'Morgan Stanley',        price: 101.30, vol: 0.016, sector: 'Finance' },
-  NVDA:  { name: 'NVIDIA Corp.',          price: 875.40, vol: 0.028, sector: 'Tech' },
-  TSLA:  { name: 'Tesla Inc.',            price: 245.80, vol: 0.035, sector: 'Auto' },
-  SPY:   { name: 'SPDR S&P 500 ETF',     price: 517.20, vol: 0.010, sector: 'ETF' },
-  EURUSD:{ name: 'EUR/USD',              price: 1.0845, vol: 0.006, sector: 'FX' },
-  GBPUSD:{ name: 'GBP/USD',             price: 1.2710, vol: 0.007, sector: 'FX' },
-  XOM:   { name: 'ExxonMobil Corp.',     price: 119.85, vol: 0.016, sector: 'Energy' },
-  GLD:   { name: 'SPDR Gold ETF',        price: 221.40, vol: 0.012, sector: 'Commodity' },
+// ── Activation Functions ──
+const activations = {
+  sigmoid: {
+    fn:   x => 1 / (1 + Math.exp(-x)),
+    deriv: x => { const s = 1 / (1 + Math.exp(-x)); return s * (1 - s); }
+  },
+  tanh: {
+    fn:   x => Math.tanh(x),
+    deriv: x => 1 - Math.tanh(x) ** 2
+  },
+  relu: {
+    fn:   x => Math.max(0, x),
+    deriv: x => x > 0 ? 1 : 0
+  }
 };
 
-// State
-const state = {
-  prices:     {},       // current prices
-  prevPrices: {},       // last-tick prices
-  openPrices: {},       // session open
-  highPrices: {},       // session high
-  lowPrices:  {},       // session low
-  volumes:    {},       // volume
-  positions:  {},       // { symbol: { qty, avgPrice } }
-  orders:     [],       // all orders
-  orderIdSeq: 1000,
-  activeSymbol: 'AAPL',
-  orderSide:  'buy',
-  priceHistory: {},     // symbol → [...prices]
-  volHistory:   {},     // symbol → [...vols]
-  ordersToday: 0,
-  fillsToday:  0,
-  pnlHistory: [],
-};
+// ── Neural Network ──
+class NeuralNetwork {
+  constructor(hiddenSize, actKey) {
+    this.hiddenSize = hiddenSize;
+    this.actKey = actKey;
+    this.init();
+  }
 
-// Initialise prices
-for (const [sym, d] of Object.entries(INSTRUMENTS)) {
-  state.prices[sym]     = d.price;
-  state.prevPrices[sym] = d.price;
-  state.openPrices[sym] = d.price;
-  state.highPrices[sym] = d.price;
-  state.lowPrices[sym]  = d.price;
-  state.volumes[sym]    = Math.floor(Math.random() * 5_000_000 + 500_000);
-  state.priceHistory[sym] = Array.from({ length: 80 }, (_, i) => {
-    const noise = (Math.random() - 0.5) * d.vol * d.price * 2;
-    return +(d.price + noise * (i / 40 - 1)).toFixed(4);
-  });
-  state.volHistory[sym] = Array.from({ length: 80 }, () =>
-    Math.floor(Math.random() * 800_000 + 100_000));
-}
+  init() {
+    const h = this.hiddenSize;
+    // Xavier init
+    const xav = (n) => (Math.random() * 2 - 1) * Math.sqrt(2 / n);
+    this.W1 = Array.from({ length: h }, () => [xav(2), xav(2)]);
+    this.b1 = Array(h).fill(0);
+    this.W2 = Array.from({ length: 1 }, () => Array.from({ length: h }, () => xav(h)));
+    this.b2 = [0];
+    // For animation
+    this.hiddenActivations = Array(h).fill(0);
+    this.outputActivation = 0;
+    this.inputActivations = [0, 0];
+  }
 
-// Seed some positions
-state.positions['AAPL'] = { qty: 5000,  avgPrice: 184.20 };
-state.positions['MSFT'] = { qty: 2000,  avgPrice: 410.50 };
-state.positions['NVDA'] = { qty: -1000, avgPrice: 890.00 };
-state.positions['JPM']  = { qty: 3000,  avgPrice: 210.80 };
+  forward(input) {
+    const act = activations[this.actKey];
+    // Hidden layer
+    this.z1 = this.W1.map((row, i) =>
+      row.reduce((sum, w, j) => sum + w * input[j], 0) + this.b1[i]
+    );
+    this.a1 = this.z1.map(z => act.fn(z));
 
-// ─── CHART SETUP ──────────────────────────────────────────────────────────────
-const CHART_COLORS = {
-  up:      '#00c853',
-  down:    '#ff3d3d',
-  grid:    'rgba(31,45,61,0.5)',
-  text:    '#6e8099',
-  line:    '#40a9ff',
-  area:    'rgba(64,169,255,0.12)',
-  volume:  'rgba(64,169,255,0.4)',
-  volUp:   'rgba(0,200,83,0.5)',
-  volDown: 'rgba(255,61,61,0.4)',
-};
+    // Output layer (always sigmoid for classification)
+    this.z2 = this.W2.map(row =>
+      row.reduce((sum, w, j) => sum + w * this.a1[j], 0)
+    ).map((z, i) => z + this.b2[i]);
+    this.a2 = this.z2.map(z => activations.sigmoid.fn(z));
 
-let priceChart, volumeChart, chartType = 'line';
+    return this.a2[0];
+  }
 
-function buildTimeLabels(n) {
-  const now = new Date();
-  return Array.from({ length: n }, (_, i) => {
-    const d = new Date(now - (n - 1 - i) * 60_000);
-    return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
-  });
-}
+  backward(input, target, lr) {
+    const act = activations[this.actKey];
+    const h = this.hiddenSize;
+    const pred = this.a2[0];
+    // Output error
+    const dOut = pred - target;
+    // W2 gradients
+    const dW2 = this.W2.map((row, i) => row.map((_, j) => dOut * this.a1[j]));
+    const db2 = [dOut];
+    // Hidden error
+    const dHidden = this.a1.map((_, j) =>
+      dOut * this.W2[0][j] * act.deriv(this.z1[j])
+    );
+    // W1 gradients
+    const dW1 = this.W1.map((row, i) => row.map((_, j) => dHidden[i] * input[j]));
+    const db1 = dHidden.slice();
+    // Update
+    this.W2 = this.W2.map((row, i) => row.map((w, j) => w - lr * dW2[i][j]));
+    this.b2 = this.b2.map((b, i) => b - lr * db2[i]);
+    this.W1 = this.W1.map((row, i) => row.map((w, j) => w - lr * dW1[i][j]));
+    this.b1 = this.b1.map((b, i) => b - lr * db1[i]);
+  }
 
-function initCharts() {
-  const sym = state.activeSymbol;
-  const prices = state.priceHistory[sym];
-  const vols   = state.volHistory[sym];
-  const labels = buildTimeLabels(prices.length);
-
-  const chartDefaults = {
-    animation: false,
-    interaction: { mode: 'index', intersect: false },
-    plugins: { legend: { display: false }, tooltip: {
-      backgroundColor: '#1c2535',
-      borderColor: '#2a3d54',
-      borderWidth: 1,
-      titleColor: '#b0bfd0',
-      bodyColor: '#e8edf5',
-      bodyFont: { family: 'JetBrains Mono', size: 11 },
-      callbacks: {
-        label: (ctx) => ` ${ctx.dataset.label || 'Price'}: ${fmtPrice(ctx.raw, sym)}`
-      }
-    }},
-    scales: {
-      x: { grid: { color: CHART_COLORS.grid }, ticks: { color: CHART_COLORS.text, font: { family: 'JetBrains Mono', size: 9 }, maxTicksLimit: 10 }, border: { color: CHART_COLORS.grid } },
-      y: { position: 'right', grid: { color: CHART_COLORS.grid }, ticks: { color: CHART_COLORS.text, font: { family: 'JetBrains Mono', size: 9 }, callback: v => fmtPrice(v, sym) }, border: { color: CHART_COLORS.grid } }
+  trainEpoch(lr) {
+    let loss = 0;
+    for (const sample of XOR_DATA) {
+      const pred = this.forward(sample.input);
+      loss += 0.5 * (pred - sample.target) ** 2;
+      this.backward(sample.input, sample.target, lr);
     }
-  };
+    return loss / XOR_DATA.length;
+  }
 
-  // Price chart
-  priceChart = new Chart(document.getElementById('priceChart').getContext('2d'), {
+  predict(input) {
+    return this.forward(input);
+  }
+
+  getPredictions() {
+    return XOR_DATA.map(d => ({
+      input: d.input,
+      target: d.target,
+      pred: this.forward(d.input)
+    }));
+  }
+}
+
+// ── State ──
+let nn, epoch, losses, isRunning, animFrame, lastForward, lastInput;
+let trainInterval = null;
+
+function getHiddenSize() { return parseInt(document.getElementById('hidden-slider').value); }
+function getLR()         { return parseFloat(document.getElementById('lr-slider').value); }
+function getActKey()     { return document.getElementById('activation-select').value; }
+function getSpeed()      { return parseInt(document.getElementById('speed-slider').value); }
+
+function resetNetwork() {
+  stopTraining();
+  epoch = 0;
+  losses = [];
+  nn = new NeuralNetwork(getHiddenSize(), getActKey());
+  lastForward = null;
+  updateStats();
+  updateTruthTable();
+  updateActivationPills();
+  drawNetwork(null);
+  drawBoundary();
+  resetChart();
+  document.getElementById('btn-train').innerHTML = '<i data-lucide="play"></i> Train';
+  document.getElementById('btn-train').classList.remove('running');
+  lucide.createIcons();
+}
+
+// ── Loss Chart ──
+let lossChart;
+function initChart() {
+  const ctx = document.getElementById('loss-chart').getContext('2d');
+  lossChart = new Chart(ctx, {
     type: 'line',
     data: {
-      labels,
+      labels: [],
       datasets: [{
-        label: 'Price',
-        data: prices,
-        borderColor: CHART_COLORS.line,
-        backgroundColor: CHART_COLORS.area,
-        borderWidth: 1.5,
+        label: 'MSE Loss',
+        data: [],
+        borderColor: '#00e5a0',
+        backgroundColor: 'rgba(0,229,160,0.08)',
+        borderWidth: 2,
         pointRadius: 0,
         fill: true,
-        tension: 0.2,
-      }]
-    },
-    options: { ...chartDefaults, responsive: true, maintainAspectRatio: false }
-  });
-
-  // Volume chart
-  volumeChart = new Chart(document.getElementById('volumeChart').getContext('2d'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Volume',
-        data: vols,
-        backgroundColor: vols.map((v, i, a) => i === 0 ? CHART_COLORS.volUp : v >= a[i-1] ? CHART_COLORS.volUp : CHART_COLORS.volDown),
-        borderWidth: 0,
-        borderRadius: 1,
+        tension: 0.4,
       }]
     },
     options: {
-      ...chartDefaults,
       responsive: true,
       maintainAspectRatio: false,
-      scales: {
-        x: { display: false },
-        y: { position: 'right', grid: { color: CHART_COLORS.grid }, ticks: { color: CHART_COLORS.text, font: { family: 'JetBrains Mono', size: 8 }, callback: v => fmtVol(v), maxTicksLimit: 3 }, border: { color: CHART_COLORS.grid } }
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+          backgroundColor: '#1a1f2e',
+          borderColor: '#252b3b',
+          borderWidth: 1,
+          titleColor: '#6b7599',
+          bodyColor: '#e8eaf0',
+          titleFont: { family: 'JetBrains Mono', size: 10 },
+          bodyFont: { family: 'JetBrains Mono', size: 11 },
+        }
       },
-      plugins: { ...chartDefaults.plugins, tooltip: { ...chartDefaults.plugins.tooltip, callbacks: { label: ctx => ` Vol: ${fmtVol(ctx.raw)}` } } }
+      scales: {
+        x: {
+          ticks: {
+            color: '#6b7599',
+            font: { family: 'JetBrains Mono', size: 9 },
+            maxTicksLimit: 8
+          },
+          grid: { color: 'rgba(37,43,59,0.7)' }
+        },
+        y: {
+          ticks: {
+            color: '#6b7599',
+            font: { family: 'JetBrains Mono', size: 9 },
+          },
+          grid: { color: 'rgba(37,43,59,0.7)' },
+          min: 0
+        }
+      }
     }
   });
 }
 
-function updateChart(sym) {
-  if (!priceChart) return;
-  const prices = state.priceHistory[sym];
-  const vols   = state.volHistory[sym];
-  const labels = buildTimeLabels(prices.length);
-  const lastPrice = prices[prices.length - 1];
-  const firstPrice = prices[0];
-  const isUp = lastPrice >= firstPrice;
-  const lineColor = isUp ? CHART_COLORS.up : CHART_COLORS.down;
-  const areaColor = isUp ? 'rgba(0,200,83,0.08)' : 'rgba(255,61,61,0.08)';
-
-  priceChart.data.labels = labels;
-  priceChart.data.datasets[0].data = prices;
-  priceChart.data.datasets[0].borderColor = lineColor;
-  priceChart.data.datasets[0].backgroundColor = areaColor;
-  priceChart.update('none');
-
-  volumeChart.data.labels = labels;
-  volumeChart.data.datasets[0].data = vols;
-  volumeChart.data.datasets[0].backgroundColor = vols.map((v, i, a) =>
-    i === 0 ? CHART_COLORS.volUp : v >= a[i-1] ? CHART_COLORS.volUp : CHART_COLORS.volDown);
-  volumeChart.update('none');
+function resetChart() {
+  lossChart.data.labels = [];
+  lossChart.data.datasets[0].data = [];
+  lossChart.update();
 }
 
-// ─── FORMATTING ────────────────────────────────────────────────────────────────
-function fmtPrice(p, sym) {
-  if (!sym) sym = state.activeSymbol;
-  const isFX = sym === 'EURUSD' || sym === 'GBPUSD';
-  if (isFX) return p.toFixed(4);
-  return p >= 100 ? p.toFixed(2) : p.toFixed(3);
-}
-function fmtPct(pct) { return (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%'; }
-function fmtVol(v) {
-  if (v >= 1_000_000) return (v / 1_000_000).toFixed(1) + 'M';
-  if (v >= 1_000)     return (v / 1_000).toFixed(0) + 'K';
-  return v.toString();
-}
-function fmtMoney(v, short) {
-  const abs = Math.abs(v);
-  let str;
-  if (short) {
-    if (abs >= 1_000_000) str = '$' + (abs / 1_000_000).toFixed(2) + 'M';
-    else if (abs >= 1_000) str = '$' + (abs / 1_000).toFixed(1) + 'K';
-    else str = '$' + abs.toFixed(2);
-  } else {
-    str = '$' + abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function pushLoss(ep, loss) {
+  if (ep % 10 === 0 || ep < 10) {
+    lossChart.data.labels.push(ep);
+    lossChart.data.datasets[0].data.push(loss.toFixed(5));
+    lossChart.update();
   }
-  return (v < 0 ? '-' : '+') + str;
-}
-function fmtTime(d) {
-  return d.toLocaleTimeString('en-US', { hour12: false });
 }
 
-// ─── TICKER STRIP ──────────────────────────────────────────────────────────────
-function buildTickerStrip() {
-  const strip = document.getElementById('tickerStrip');
-  strip.innerHTML = '';
-  const syms = Object.keys(INSTRUMENTS);
-  // duplicate for seamless scroll
-  [...syms, ...syms].forEach(sym => {
-    const p = state.prices[sym];
-    const open = state.openPrices[sym];
-    const chgPct = (p - open) / open * 100;
-    const cls = chgPct >= 0 ? 'up' : 'down';
-    const arrow = chgPct >= 0 ? '▲' : '▼';
-    const el = document.createElement('span');
-    el.className = 'ts-ticker-item';
-    el.dataset.sym = sym;
-    el.innerHTML = `
-      <span class="ts-ticker-item__sym">${sym}</span>
-      <span class="ts-ticker-item__price">${fmtPrice(p, sym)}</span>
-      <span class="ts-ticker-item__chg ${cls}">${arrow} ${fmtPct(chgPct)}</span>`;
-    el.addEventListener('click', () => selectSymbol(sym));
-    strip.appendChild(el);
+// ── Stats ──
+function updateStats(loss) {
+  document.getElementById('stat-epoch').textContent = epoch;
+  document.getElementById('stat-loss').textContent = loss !== undefined ? loss.toFixed(5) : '—';
+  const preds = nn.getPredictions();
+  const correct = preds.filter(p => Math.round(p.pred) === p.target).length;
+  document.getElementById('stat-acc').textContent = loss !== undefined
+    ? `${correct}/4`
+    : '—';
+}
+
+// ── Truth Table ──
+function updateTruthTable() {
+  const preds = nn.getPredictions();
+  const ids = ['00', '01', '10', '11'];
+  preds.forEach((p, i) => {
+    const predEl  = document.getElementById(`pred-${ids[i]}`);
+    const verdEl  = document.getElementById(`verd-${ids[i]}`);
+    predEl.textContent = p.pred.toFixed(3);
+    const correct = Math.round(p.pred) === p.target;
+    verdEl.className = 'verdict ' + (correct ? 'ok' : 'bad');
   });
 }
 
-function refreshTickerStrip() {
-  const items = document.querySelectorAll('.ts-ticker-item');
-  const syms = Object.keys(INSTRUMENTS);
-  items.forEach((el, i) => {
-    const sym = syms[i % syms.length];
-    const p = state.prices[sym];
-    const open = state.openPrices[sym];
-    const chgPct = (p - open) / open * 100;
-    const cls = chgPct >= 0 ? 'up' : 'down';
-    const arrow = chgPct >= 0 ? '▲' : '▼';
-    el.querySelector('.ts-ticker-item__price').textContent = fmtPrice(p, sym);
-    const chgEl = el.querySelector('.ts-ticker-item__chg');
-    chgEl.textContent = `${arrow} ${fmtPct(chgPct)}`;
-    chgEl.className = `ts-ticker-item__chg ${cls}`;
+// ── Activation Pills ──
+function updateActivationPills() {
+  const preds = nn.getPredictions();
+  const ids = ['00', '01', '10', '11'];
+  const targets = [0, 1, 1, 0];
+  preds.forEach((p, i) => {
+    const pill = document.getElementById(`act-${ids[i]}`);
+    const out  = document.getElementById(`out-${ids[i]}`);
+    out.textContent = p.pred.toFixed(3);
+    const correct = Math.round(p.pred) === p.target;
+    pill.className = 'activation-pill ' + (correct ? 'correct' : 'wrong');
   });
 }
 
-// ─── WATCHLIST ─────────────────────────────────────────────────────────────────
-function renderWatchlist() {
-  const tbody = document.getElementById('watchlistBody');
-  const search = document.getElementById('symbolSearch').value.toUpperCase();
-  const syms = Object.keys(INSTRUMENTS).filter(s => s.includes(search) || INSTRUMENTS[s].name.toUpperCase().includes(search));
-  tbody.innerHTML = '';
-  syms.forEach(sym => {
-    const p    = state.prices[sym];
-    const open = state.openPrices[sym];
-    const prev = state.prevPrices[sym];
-    const chgPct = (p - open) / open * 100;
-    const cls    = chgPct >= 0 ? 'ts-positive' : 'ts-negative';
-    const tr = document.createElement('tr');
-    tr.className = sym === state.activeSymbol ? 'ts-row--active' : '';
-    tr.innerHTML = `
-      <td><span style="font-weight:700;color:${sym===state.activeSymbol?'var(--accent)':'var(--text-0)'}">
-        ${sym}</span><br><span style="color:var(--text-3);font-size:8px">${INSTRUMENTS[sym].sector}</span></td>
-      <td class="ts-num" style="font-family:var(--font-mono)">${fmtPrice(p, sym)}</td>
-      <td class="ts-num ${cls}" style="font-family:var(--font-mono)">${fmtPct(chgPct)}</td>
-      <td class="ts-num" style="color:var(--text-2)">${fmtVol(state.volumes[sym])}</td>`;
-    tr.addEventListener('click', () => selectSymbol(sym));
-    tbody.appendChild(tr);
+// ── Network Canvas ──
+const NET_CANVAS = document.getElementById('network-canvas');
+const NET_CTX = NET_CANVAS.getContext('2d');
+
+function getNeuronPositions(hiddenSize) {
+  const W = NET_CANVAS.width;
+  const H = NET_CANVAS.height;
+  const cols = [W * 0.13, W * 0.42, W * 0.78];
+  const layers = [2, hiddenSize, 1];
+  return layers.map((count, li) => {
+    const x = cols[li];
+    return Array.from({ length: count }, (_, i) => ({
+      x,
+      y: H / 2 + (i - (count - 1) / 2) * Math.min(68, (H - 40) / count)
+    }));
   });
 }
 
-// ─── POSITIONS ─────────────────────────────────────────────────────────────────
-function renderPositions() {
-  const tbody = document.getElementById('positionsBody');
-  tbody.innerHTML = '';
-  let totalPnl = 0;
-  for (const [sym, pos] of Object.entries(state.positions)) {
-    if (pos.qty === 0) continue;
-    const price = state.prices[sym];
-    const pnl = (price - pos.avgPrice) * pos.qty;
-    totalPnl += pnl;
-    const pnlCls = pnl >= 0 ? 'ts-positive' : 'ts-negative';
-    const qtyCls = pos.qty > 0 ? 'ts-pos-long' : 'ts-pos-short';
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td style="font-weight:700;cursor:pointer" class="${qtyCls}" onclick="selectSymbol('${sym}')">${sym}</td>
-      <td class="ts-num ${qtyCls}" style="font-family:var(--font-mono)">${pos.qty.toLocaleString()}</td>
-      <td class="ts-num" style="font-family:var(--font-mono);color:var(--text-2)">${fmtPrice(pos.avgPrice, sym)}</td>
-      <td class="ts-num ${pnlCls}" style="font-family:var(--font-mono);font-weight:600">${fmtMoney(pnl, true)}</td>`;
-    tbody.appendChild(tr);
-  }
-  const pnlEl = document.getElementById('totalPnl');
-  pnlEl.textContent = fmtMoney(totalPnl, true);
-  pnlEl.className = `ts-pnl-value ${totalPnl >= 0 ? 'ts-positive' : 'ts-negative'}`;
+function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+function lerpColor(a, b, t) {
+  const hex = (s) => parseInt(s, 16);
+  const parse = c => ({ r: hex(c.slice(1,3)), g: hex(c.slice(3,5)), b: hex(c.slice(5,7)) });
+  const ca = parse(a), cb = parse(b);
+  const r = Math.round(ca.r + (cb.r - ca.r) * t);
+  const g = Math.round(ca.g + (cb.g - ca.g) * t);
+  const b2 = Math.round(ca.b + (cb.b - ca.b) * t);
+  return `rgb(${r},${g},${b2})`;
 }
 
-// ─── INSTRUMENT HEADER ─────────────────────────────────────────────────────────
-function updateInstrumentHeader(sym) {
-  const p    = state.prices[sym];
-  const open = state.openPrices[sym];
-  const chg  = p - open;
-  const chgPct = chg / open * 100;
-  document.getElementById('activeSymbol').textContent = sym;
-  document.getElementById('activeName').textContent = INSTRUMENTS[sym]?.name || '';
-  document.getElementById('activePrice').textContent = fmtPrice(p, sym);
-  const chgEl = document.getElementById('activeChange');
-  chgEl.textContent = `${chg >= 0 ? '+' : ''}${fmtPrice(chg, sym)} (${fmtPct(chgPct)})`;
-  chgEl.className = `ts-instrument-change ${chgPct >= 0 ? 'ts-positive' : 'ts-negative'}`;
-  document.getElementById('oOpen').textContent  = fmtPrice(open, sym);
-  document.getElementById('oHigh').textContent  = fmtPrice(state.highPrices[sym], sym);
-  document.getElementById('oLow').textContent   = fmtPrice(state.lowPrices[sym], sym);
-  document.getElementById('oClose').textContent = fmtPrice(p, sym);
-  document.getElementById('oVol').textContent   = fmtVol(state.volumes[sym]);
-}
+function drawNetwork(forward) {
+  const ctx = NET_CTX;
+  const W = NET_CANVAS.width;
+  const H = NET_CANVAS.height;
+  ctx.clearRect(0, 0, W, H);
 
-// ─── ORDER BOOK ────────────────────────────────────────────────────────────────
-function renderOrderBook(sym) {
-  const price = state.prices[sym];
-  const spread = price * 0.0001;
-  const askBase = price + spread / 2;
-  const bidBase = price - spread / 2;
+  // Background
+  ctx.fillStyle = '#12151d';
+  ctx.fillRect(0, 0, W, H);
 
-  const askBook = document.getElementById('askBook');
-  const bidBook = document.getElementById('bidBook');
-  askBook.innerHTML = '';
-  bidBook.innerHTML = '';
+  const hiddenSize = nn.hiddenSize;
+  const positions = getNeuronPositions(hiddenSize);
 
-  const maxSize = 50000;
-  for (let i = 5; i >= 1; i--) {
-    const askP = askBase + i * spread * (0.5 + Math.random() * 0.5);
-    const askS = Math.floor(Math.random() * 40000 + 3000);
-    const pct = Math.min(askS / maxSize * 100, 100);
-    const row = document.createElement('div');
-    row.className = 'ts-ob-row ts-ob-row--ask';
-    row.innerHTML = `<span>${fmtVol(askS)}</span><span>${fmtPrice(askP, sym)}</span><div class="ts-ob-bar ts-ob-bar--ask" style="width:${pct}%"></div>`;
-    askBook.appendChild(row);
-  }
-  for (let i = 1; i <= 5; i++) {
-    const bidP = bidBase - i * spread * (0.5 + Math.random() * 0.5);
-    const bidS = Math.floor(Math.random() * 40000 + 3000);
-    const pct = Math.min(bidS / maxSize * 100, 100);
-    const row = document.createElement('div');
-    row.className = 'ts-ob-row ts-ob-row--bid';
-    row.innerHTML = `<span>${fmtPrice(bidP, sym)}</span><span>${fmtVol(bidS)}</span><div class="ts-ob-bar ts-ob-bar--bid" style="width:${pct}%"></div>`;
-    bidBook.appendChild(row);
+  // Extract weights for edge color
+  const W1 = nn.W1; // [hidden x 2]
+  const W2 = nn.W2; // [1 x hidden]
+  const maxW1 = W1.flat().reduce((m, v) => Math.max(m, Math.abs(v)), 0.001);
+  const maxW2 = W2.flat().reduce((m, v) => Math.max(m, Math.abs(v)), 0.001);
+
+  // Draw edges input → hidden
+  for (let i = 0; i < hiddenSize; i++) {
+    for (let j = 0; j < 2; j++) {
+      const w = W1[i][j];
+      const t = clamp01((w + maxW1) / (2 * maxW1));
+      const col = w > 0 ? `rgba(0,229,160,${0.15 + 0.55 * Math.abs(w) / maxW1})`
+                        : `rgba(255,107,107,${0.15 + 0.55 * Math.abs(w) / maxW1})`;
+      drawEdge(ctx, positions[0][j], positions[1][i], col, Math.max(0.5, 2.5 * Math.abs(w) / maxW1));
+    }
   }
 
-  document.getElementById('midPrice').textContent = fmtPrice(price, sym);
-  document.getElementById('spreadBadge').textContent = `Spread: ${fmtPrice(spread, sym)}`;
-
-  // Set limit price in order entry
-  const orderPriceEl = document.getElementById('orderPrice');
-  if (document.activeElement !== orderPriceEl) {
-    orderPriceEl.value = fmtPrice(price, sym);
-  }
-}
-
-// ─── TRADE TAPE ────────────────────────────────────────────────────────────────
-const tape = document.getElementById('tradeTape');
-const MAX_TAPE = 80;
-
-function addTapeRow(sym, price, size, side) {
-  const now = new Date();
-  const timeStr = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
-  const isLarge = size > 30000;
-  const row = document.createElement('div');
-  row.className = `ts-tape-row ts-tape-row--${side}${isLarge ? ' ts-tape-row--large' : ''}`;
-  row.innerHTML = `<span>${timeStr}</span><span style="color:${side==='buy'?'var(--green)':'var(--red)'};">${fmtPrice(price, sym)}</span><span>${fmtVol(size)}</span><span style="color:${side==='buy'?'var(--green)':'var(--red)'};">${side === 'buy' ? 'B' : 'S'}</span>`;
-  tape.insertBefore(row, tape.firstChild);
-  while (tape.children.length > MAX_TAPE) tape.removeChild(tape.lastChild);
-}
-
-// ─── PRICE UPDATE ENGINE ──────────────────────────────────────────────────────
-function tickPrices() {
-  for (const [sym, d] of Object.entries(INSTRUMENTS)) {
-    const prev = state.prices[sym];
-    const move = (Math.random() - 0.498) * d.vol * prev * 0.1;
-    const newPrice = Math.max(prev * 0.97, Math.min(prev * 1.03, prev + move));
-    state.prevPrices[sym] = prev;
-    state.prices[sym]     = +newPrice.toFixed(sym.includes('USD') ? 4 : 2);
-
-    // Track OHLC
-    if (newPrice > state.highPrices[sym]) state.highPrices[sym] = state.prices[sym];
-    if (newPrice < state.lowPrices[sym])  state.lowPrices[sym]  = state.prices[sym];
-
-    // Append price history
-    state.priceHistory[sym].push(state.prices[sym]);
-    if (state.priceHistory[sym].length > 200) state.priceHistory[sym].shift();
-    const vol = Math.floor(Math.random() * 600_000 + 50_000);
-    state.volHistory[sym].push(vol);
-    if (state.volHistory[sym].length > 200) state.volHistory[sym].shift();
-    state.volumes[sym] += vol;
-  }
-}
-
-// ─── ACTIVE SYMBOL ────────────────────────────────────────────────────────────
-function selectSymbol(sym) {
-  state.activeSymbol = sym;
-  document.getElementById('orderSymbol').value = sym;
-  document.getElementById('orderName').value   = INSTRUMENTS[sym]?.name || '';
-  renderWatchlist();
-  updateInstrumentHeader(sym);
-  updateChart(sym);
-  renderOrderBook(sym);
-  updateSubmitBtn();
-}
-
-// ─── SESSION CLOCK ────────────────────────────────────────────────────────────
-function updateClock() {
-  document.getElementById('sessionTime').textContent = new Date().toLocaleTimeString('en-US', { hour12: false });
-}
-
-// ─── LATENCY SIMULATION ───────────────────────────────────────────────────────
-function updateLatency() {
-  const ms = Math.floor(Math.random() * 4 + 1);
-  document.getElementById('latency').textContent = `${ms}ms`;
-}
-
-// ─── ORDER ENTRY ──────────────────────────────────────────────────────────────
-function updateSubmitBtn() {
-  const side = state.orderSide;
-  const qty  = parseInt(document.getElementById('orderQty').value) || 0;
-  const sym  = document.getElementById('orderSymbol').value.trim().toUpperCase();
-  const btn  = document.getElementById('submitOrder');
-  const lbl  = document.getElementById('submitLabel');
-  btn.className = `ts-btn-order ts-btn-order--${side}`;
-  lbl.textContent = `${side.toUpperCase()} ${qty.toLocaleString()} ${sym}`;
-  document.getElementById('confirmOrderBtn').className = `ts-btn-primary${side === 'sell' ? ' ts-btn-primary--sell' : ''}`;
-  updateNotional();
-}
-
-function updateNotional() {
-  const qty   = parseInt(document.getElementById('orderQty').value) || 0;
-  const price = parseFloat(document.getElementById('orderPrice').value) || state.prices[state.activeSymbol];
-  const notional = qty * price;
-  document.getElementById('notionalValue').textContent = fmtMoney(notional, true).replace('+','');
-  const buyingPower = 12_450_000;
-  const risk = Math.min(notional / buyingPower, 1);
-  const riskPct = Math.round(34 + risk * 50);
-  document.getElementById('riskBar').style.width = `${riskPct}%`;
-  document.getElementById('riskPct').textContent = `${riskPct}%`;
-  document.getElementById('riskBar').className = `ts-progress-fill ${riskPct > 80 ? 'ts-progress-fill--danger' : riskPct > 60 ? 'ts-progress-fill--warn' : 'ts-progress-fill--ok'}`;
-  const riskStatus = document.getElementById('riskStatus');
-  if (riskPct > 90) {
-    riskStatus.className = 'ts-risk-status ts-risk-breach';
-    riskStatus.innerHTML = '<i data-lucide="shield-x" class="ts-icon-sm"></i> Risk Breach';
-    lucide.createIcons();
-  } else if (riskPct > 70) {
-    riskStatus.className = 'ts-risk-status ts-risk-warn';
-    riskStatus.innerHTML = '<i data-lucide="shield-alert" class="ts-icon-sm"></i> Near Limit';
-    lucide.createIcons();
-  } else {
-    riskStatus.className = 'ts-risk-status ts-risk-ok';
-    riskStatus.innerHTML = '<i data-lucide="shield-check" class="ts-icon-sm"></i> Pre-Trade OK';
-    lucide.createIcons();
-  }
-}
-
-// ─── ORDER SUBMISSION ─────────────────────────────────────────────────────────
-function showConfirmModal() {
-  const sym   = document.getElementById('orderSymbol').value.trim().toUpperCase();
-  const qty   = parseInt(document.getElementById('orderQty').value) || 0;
-  const price = parseFloat(document.getElementById('orderPrice').value) || state.prices[sym];
-  const type  = document.getElementById('orderType').value;
-  const tif   = document.getElementById('orderTIF').value;
-  const dest  = document.getElementById('orderDest').value;
-  const side  = state.orderSide;
-  const notional = qty * price;
-
-  if (!sym || qty <= 0) { showToast('Invalid order parameters', 'error'); return; }
-  if (!INSTRUMENTS[sym]) { showToast(`Unknown symbol: ${sym}`, 'error'); return; }
-
-  document.getElementById('modalBody').innerHTML = `
-    <table class="ts-confirm-table">
-      <tr><td>Symbol</td><td>${sym}</td></tr>
-      <tr><td>Name</td><td style="font-size:10px;color:var(--text-2)">${INSTRUMENTS[sym].name}</td></tr>
-      <tr><td>Side</td><td style="color:${side==='buy'?'var(--green)':'var(--red)'}; font-weight:700; letter-spacing:1px">${side.toUpperCase()}</td></tr>
-      <tr><td>Quantity</td><td>${qty.toLocaleString()} shares</td></tr>
-      <tr><td>Order Type</td><td>${type.toUpperCase()}</td></tr>
-      <tr><td>Price</td><td>${type === 'market' ? 'MARKET' : fmtPrice(price, sym)}</td></tr>
-      <tr><td>Notional</td><td>${fmtMoney(notional, false).replace('+','$')}</td></tr>
-      <tr><td>TIF</td><td>${tif}</td></tr>
-      <tr><td>Destination</td><td>${dest}</td></tr>
-      <tr><td>Account</td><td>EQ-PROP-A</td></tr>
-    </table>`;
-
-  document.getElementById('confirmModal').style.display = 'flex';
-}
-
-function executeOrder() {
-  document.getElementById('confirmModal').style.display = 'none';
-  const sym   = document.getElementById('orderSymbol').value.trim().toUpperCase();
-  const qty   = parseInt(document.getElementById('orderQty').value) || 0;
-  const price = parseFloat(document.getElementById('orderPrice').value) || state.prices[sym];
-  const type  = document.getElementById('orderType').value;
-  const tif   = document.getElementById('orderTIF').value;
-  const dest  = document.getElementById('orderDest').value;
-  const side  = state.orderSide;
-  const now   = new Date();
-  const orderId = `ORD-${++state.orderIdSeq}`;
-  const fillPrice = type === 'market' ? state.prices[sym] : price;
-
-  const order = {
-    id: orderId, sym, side, qty,
-    type, price: fillPrice, tif, dest,
-    time: now, status: 'open', filledQty: 0,
-    tab: 'open'
-  };
-  state.orders.unshift(order);
-  state.ordersToday++;
-
-  // Simulate fill (market: instant, limit: 70% chance)
-  const willFill = type === 'market' || Math.random() > 0.3;
-  if (willFill) {
-    setTimeout(() => {
-      fillOrder(orderId);
-    }, type === 'market' ? 300 + Math.random() * 200 : 1000 + Math.random() * 3000);
+  // Draw edges hidden → output
+  for (let j = 0; j < hiddenSize; j++) {
+    const w = W2[0][j];
+    const col = w > 0 ? `rgba(0,229,160,${0.15 + 0.55 * Math.abs(w) / maxW2})`
+                      : `rgba(255,107,107,${0.15 + 0.55 * Math.abs(w) / maxW2})`;
+    drawEdge(ctx, positions[1][j], positions[2][0], col, Math.max(0.5, 2.5 * Math.abs(w) / maxW2));
   }
 
-  renderBlotter();
-  updateCounts();
-  showToast(`✓ Order ${orderId} sent — ${side.toUpperCase()} ${qty.toLocaleString()} ${sym}`);
-}
+  // Get activations for color
+  let inputActs = [0.5, 0.5];
+  let hidActs = Array(hiddenSize).fill(0.5);
+  let outAct = 0.5;
 
-function fillOrder(orderId) {
-  const order = state.orders.find(o => o.id === orderId);
-  if (!order || order.status !== 'open') return;
-  order.status    = 'filled';
-  order.filledQty = order.qty;
-  order.tab       = 'filled';
-  state.fillsToday++;
-
-  // Update position
-  const sym  = order.sym;
-  const qty  = order.side === 'buy' ? order.qty : -order.qty;
-  const pos  = state.positions[sym] || { qty: 0, avgPrice: 0 };
-  if ((pos.qty > 0 && qty > 0) || (pos.qty < 0 && qty < 0)) {
-    // Adding to position — weighted avg
-    pos.avgPrice = (pos.avgPrice * Math.abs(pos.qty) + order.price * Math.abs(qty)) / (Math.abs(pos.qty) + Math.abs(qty));
-  } else if (Math.abs(qty) >= Math.abs(pos.qty)) {
-    // Flipping
-    pos.avgPrice = order.price;
+  if (forward) {
+    inputActs = forward.input;
+    hidActs = forward.a1;
+    outAct = forward.a2;
   }
-  pos.qty += qty;
-  state.positions[sym] = pos;
 
-  // Add to tape
-  addTapeRow(sym, order.price, order.qty, order.side);
+  // Draw neurons — input
+  const layerLabels = [['x₁', 'x₂'],
+    Array.from({ length: hiddenSize }, (_, i) => `h${i + 1}`),
+    ['ŷ']];
 
-  renderPositions();
-  renderBlotter();
-  updateCounts();
-  showToast(`✓ Filled ${orderId} — ${order.side.toUpperCase()} ${order.qty.toLocaleString()} ${sym} @ ${fmtPrice(order.price, sym)}`, 'ok');
-}
+  positions.forEach((layer, li) => {
+    layer.forEach((pos, ni) => {
+      let act = 0.5;
+      if (li === 0) act = inputActs[ni];
+      if (li === 1) act = clamp01(hidActs[ni]);
+      if (li === 2) act = clamp01(outAct);
 
-function cancelOrder(orderId) {
-  const order = state.orders.find(o => o.id === orderId);
-  if (!order || order.status !== 'open') return;
-  order.status = 'cancelled';
-  order.tab    = 'cancelled';
-  renderBlotter();
-  showToast(`Order ${orderId} cancelled`, 'warn');
-}
+      drawNeuron(ctx, pos.x, pos.y, act, layerLabels[li][ni], li);
+    });
+  });
 
-// ─── BLOTTER ──────────────────────────────────────────────────────────────────
-let activeBlotterTab = 'open';
-function renderBlotter() {
-  const tbody = document.getElementById('blotterOpen');
-  tbody.innerHTML = '';
-  const filtered = state.orders.filter(o => o.tab === activeBlotterTab);
-  filtered.slice(0, 30).forEach(o => {
-    const sideCls = o.side === 'buy' ? 'ts-positive' : 'ts-negative';
-    const statusMap = { open: 'open', filled: 'filled', cancelled: 'cancelled' };
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td style="font-family:var(--font-mono);font-size:9px;color:var(--text-2)">${fmtTime(o.time)}</td>
-      <td style="font-weight:700">${o.sym}</td>
-      <td class="${sideCls}" style="font-weight:700">${o.side.toUpperCase()}</td>
-      <td style="color:var(--text-2)">${o.type.toUpperCase()}</td>
-      <td class="ts-num" style="font-family:var(--font-mono)">${o.qty.toLocaleString()}</td>
-      <td class="ts-num" style="font-family:var(--font-mono)">${fmtPrice(o.price, o.sym)}</td>
-      <td><span class="ts-status-badge ts-status-badge--${statusMap[o.status]}">${o.status}</span></td>
-      <td>${o.status === 'open' ? `<button class="ts-cancel-btn" onclick="cancelOrder('${o.id}')">✕</button>` : ''}</td>`;
-    tbody.appendChild(tr);
+  // Layer labels
+  const layerNames = ['Input', 'Hidden', 'Output'];
+  [0, 1, 2].forEach(li => {
+    ctx.font = '10px JetBrains Mono';
+    ctx.fillStyle = '#6b7599';
+    ctx.textAlign = 'center';
+    const x = positions[li][0].x;
+    ctx.fillText(layerNames[li], x, H - 8);
   });
 }
 
-function updateCounts() {
-  document.getElementById('orderCount').innerHTML = `Orders Today: <b>${state.ordersToday}</b>`;
-  document.getElementById('fillCount').innerHTML   = `Fills: <b>${state.fillsToday}</b>`;
+function drawEdge(ctx, from, to, color, width) {
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  // Bezier curve
+  const cx = (from.x + to.x) / 2;
+  ctx.bezierCurveTo(cx, from.y, cx, to.y, to.x, to.y);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.stroke();
 }
 
-// ─── RISK SUMMARY (dynamic) ────────────────────────────────────────────────────
-function updateRiskSummary() {
-  let gross = 0, net = 0;
-  for (const [sym, pos] of Object.entries(state.positions)) {
-    const mv = Math.abs(pos.qty) * state.prices[sym];
-    gross += mv;
-    net   += pos.qty * state.prices[sym];
+function drawNeuron(ctx, x, y, activation, label, layerIdx) {
+  const r = layerIdx === 2 ? 20 : 16;
+  // Glow
+  const glowColor = activation > 0.5
+    ? `rgba(0,229,160,${0.15 + 0.55 * activation})`
+    : `rgba(76,201,240,${0.1 + 0.3 * (1 - activation)})`;
+  ctx.shadowBlur = 14 * activation;
+  ctx.shadowColor = glowColor;
+
+  // Neuron body
+  const grad = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r);
+  grad.addColorStop(0, lerpColor('#2a3a4a', '#00e5a0', clamp01(activation)));
+  grad.addColorStop(1, '#12151d');
+
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Border
+  ctx.strokeStyle = activation > 0.5
+    ? `rgba(0,229,160,${0.4 + 0.6 * activation})`
+    : '#252b3b';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Label
+  ctx.font = `bold ${r > 18 ? 11 : 9}px JetBrains Mono`;
+  ctx.fillStyle = '#e8eaf0';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x, y);
+}
+
+// ── Decision Boundary ──
+const BOUND_CANVAS = document.getElementById('boundary-canvas');
+const BOUND_CTX = BOUND_CANVAS.getContext('2d');
+const BOUND_SIZE = 80; // internal resolution
+
+function drawBoundary() {
+  const size = BOUND_SIZE;
+  const imgData = BOUND_CTX.createImageData(size, size);
+  for (let row = 0; row < size; row++) {
+    for (let col = 0; col < size; col++) {
+      const x1 = col / (size - 1);
+      const x2 = 1 - row / (size - 1);
+      const pred = nn.predict([x1, x2]);
+      const idx = (row * size + col) * 4;
+      if (pred > 0.5) {
+        // Green tint
+        imgData.data[idx]     = Math.round(0  + pred * 0);
+        imgData.data[idx + 1] = Math.round(80 + pred * 100);
+        imgData.data[idx + 2] = Math.round(50 + pred * 50);
+        imgData.data[idx + 3] = Math.round(80 + pred * 120);
+      } else {
+        // Red tint
+        imgData.data[idx]     = Math.round(120 + (1 - pred) * 100);
+        imgData.data[idx + 1] = Math.round(20);
+        imgData.data[idx + 2] = Math.round(20);
+        imgData.data[idx + 3] = Math.round(80 + (1 - pred) * 100);
+      }
+    }
   }
-  document.getElementById('grossExp').textContent  = fmtMoney(gross,   true).replace('+','');
-  document.getElementById('netExp').textContent    = fmtMoney(net,     true).replace('+', net < 0 ? '-' : '');
-  document.getElementById('varVal').textContent    = '-$' + (gross * 0.017).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,',');
-  const beta = (0.9 + Math.random() * 0.4).toFixed(2);
-  document.getElementById('betaVal').textContent  = beta;
-  document.getElementById('deltaVal').textContent = (net > 0 ? '+' : '') + (net / (gross || 1)).toFixed(2);
-  const sharpe = (1.2 + Math.random() * 1.2).toFixed(2);
-  document.getElementById('sharpeVal').textContent = sharpe;
-}
 
-// ─── TOAST ─────────────────────────────────────────────────────────────────────
-let toastTimer;
-function showToast(msg, type = 'ok') {
-  const toast = document.getElementById('toast');
-  toast.textContent = msg;
-  toast.className = `ts-toast${type === 'error' ? ' ts-toast--error' : type === 'warn' ? ' ts-toast--warn' : ''}`;
-  toast.style.display = 'block';
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toast.style.display = 'none'; }, 3500);
-}
+  // Render image at full canvas size
+  const tmpCanvas = document.createElement('canvas');
+  tmpCanvas.width = size;
+  tmpCanvas.height = size;
+  tmpCanvas.getContext('2d').putImageData(imgData, 0, 0);
+  BOUND_CTX.fillStyle = '#12151d';
+  BOUND_CTX.fillRect(0, 0, BOUND_CANVAS.width, BOUND_CANVAS.height);
+  BOUND_CTX.imageSmoothingEnabled = false;
+  BOUND_CTX.drawImage(tmpCanvas, 0, 0, BOUND_CANVAS.width, BOUND_CANVAS.height);
 
-// ─── EVENT LISTENERS ──────────────────────────────────────────────────────────
-document.getElementById('btnBuy').addEventListener('click', () => {
-  state.orderSide = 'buy';
-  document.getElementById('btnBuy').className  = 'ts-side-btn ts-side-btn--buy ts-side-btn--active';
-  document.getElementById('btnSell').className = 'ts-side-btn ts-side-btn--sell';
-  updateSubmitBtn();
-});
-document.getElementById('btnSell').addEventListener('click', () => {
-  state.orderSide = 'sell';
-  document.getElementById('btnSell').className = 'ts-side-btn ts-side-btn--sell ts-side-btn--active';
-  document.getElementById('btnBuy').className  = 'ts-side-btn ts-side-btn--buy';
-  updateSubmitBtn();
-});
-document.getElementById('submitOrder').addEventListener('click', showConfirmModal);
-document.getElementById('clearOrder').addEventListener('click', () => {
-  document.getElementById('orderQty').value   = '1000';
-  document.getElementById('orderPrice').value = fmtPrice(state.prices[state.activeSymbol], state.activeSymbol);
-  document.getElementById('orderType').value  = 'limit';
-  document.getElementById('orderTIF').value   = 'Day';
-  updateSubmitBtn();
-});
-document.getElementById('confirmOrderBtn').addEventListener('click', executeOrder);
-document.getElementById('closeModal').addEventListener('click', () => { document.getElementById('confirmModal').style.display = 'none'; });
-document.getElementById('cancelModal').addEventListener('click', () => { document.getElementById('confirmModal').style.display = 'none'; });
-document.getElementById('orderQty').addEventListener('input', updateNotional);
-document.getElementById('orderPrice').addEventListener('input', updateNotional);
-document.getElementById('orderSymbol').addEventListener('change', () => {
-  const sym = document.getElementById('orderSymbol').value.trim().toUpperCase();
-  if (INSTRUMENTS[sym]) selectSymbol(sym);
-  else document.getElementById('orderName').value = 'Unknown';
-});
-
-// Timeframe buttons
-document.querySelectorAll('.ts-tf-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.ts-tf-btn').forEach(b => b.classList.remove('ts-tf-btn--active'));
-    btn.classList.add('ts-tf-btn--active');
-    // Resample history at different length
-    updateChart(state.activeSymbol);
+  // Draw XOR points
+  const pts = [
+    { x: 0, y: 0, t: 0 },
+    { x: 0, y: 1, t: 1 },
+    { x: 1, y: 0, t: 1 },
+    { x: 1, y: 1, t: 0 },
+  ];
+  pts.forEach(p => {
+    const cx = p.x * (BOUND_CANVAS.width - 24) + 12;
+    const cy = (1 - p.y) * (BOUND_CANVAS.height - 24) + 12;
+    BOUND_CTX.beginPath();
+    BOUND_CTX.arc(cx, cy, 7, 0, Math.PI * 2);
+    BOUND_CTX.fillStyle = p.t === 1 ? '#00e5a0' : '#ff6b6b';
+    BOUND_CTX.fill();
+    BOUND_CTX.strokeStyle = '#0c0e13';
+    BOUND_CTX.lineWidth = 2;
+    BOUND_CTX.stroke();
   });
-});
-
-// Chart type buttons
-document.getElementById('chartTypeLine').addEventListener('click', () => {
-  setChartType('line');
-  document.querySelectorAll('#chartTypeLine, #chartTypeBar, #chartTypeArea').forEach(b => b.classList.remove('ts-icon-btn--active'));
-  document.getElementById('chartTypeLine').classList.add('ts-icon-btn--active');
-});
-document.getElementById('chartTypeArea').addEventListener('click', () => {
-  setChartType('area');
-  document.querySelectorAll('#chartTypeLine, #chartTypeBar, #chartTypeArea').forEach(b => b.classList.remove('ts-icon-btn--active'));
-  document.getElementById('chartTypeArea').classList.add('ts-icon-btn--active');
-});
-document.getElementById('chartTypeBar').addEventListener('click', () => {
-  setChartType('bar');
-  document.querySelectorAll('#chartTypeLine, #chartTypeBar, #chartTypeArea').forEach(b => b.classList.remove('ts-icon-btn--active'));
-  document.getElementById('chartTypeBar').classList.add('ts-icon-btn--active');
-});
-
-function setChartType(type) {
-  chartType = type;
-  const ds = priceChart.data.datasets[0];
-  if (type === 'line') { ds.fill = false; ds.type = 'line'; }
-  else if (type === 'area') { ds.fill = true; }
-  else if (type === 'bar') { priceChart.config.type = 'bar'; }
-  priceChart.update('none');
 }
 
-// Blotter tabs
-document.querySelectorAll('.ts-tab-mini').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.ts-tab-mini').forEach(b => b.classList.remove('ts-tab-mini--active'));
-    btn.classList.add('ts-tab-mini--active');
-    activeBlotterTab = btn.dataset.tab;
-    renderBlotter();
-  });
-});
+// ── Training Loop ──
+function runEpochs(count) {
+  for (let i = 0; i < count; i++) {
+    const loss = nn.trainEpoch(getLR());
+    epoch++;
+    losses.push(loss);
+    pushLoss(epoch, loss);
 
-// Watchlist search
-document.getElementById('symbolSearch').addEventListener('input', renderWatchlist);
+    if (i === count - 1) {
+      updateStats(loss);
+      updateTruthTable();
+      updateActivationPills();
 
-// Top nav
-document.querySelectorAll('.ts-topnav__item').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.ts-topnav__item').forEach(b => b.classList.remove('ts-topnav__item--active'));
-    btn.classList.add('ts-topnav__item--active');
-  });
-});
-
-// ─── MAIN TICK LOOP ────────────────────────────────────────────────────────────
-let tickCount = 0;
-function mainLoop() {
-  tickPrices();
-  tickCount++;
-
-  // Update UI
-  refreshTickerStrip();
-  updateInstrumentHeader(state.activeSymbol);
-  renderPositions();
-  updateRiskSummary();
-
-  if (tickCount % 2 === 0) {
-    updateChart(state.activeSymbol);
-    renderOrderBook(state.activeSymbol);
+      // Do a forward pass on a random XOR sample for animation
+      const sample = XOR_DATA[Math.floor(Math.random() * 4)];
+      nn.forward(sample.input);
+      drawNetwork({ input: sample.input, a1: nn.a1, a2: nn.a2[0] });
+      drawBoundary();
+    }
   }
-  if (tickCount % 3 === 0) {
-    renderWatchlist();
-  }
-
-  // Simulate random tape entries
-  const sym = state.activeSymbol;
-  const numTrades = Math.floor(Math.random() * 3 + 1);
-  for (let i = 0; i < numTrades; i++) {
-    const price = state.prices[sym] * (1 + (Math.random() - 0.5) * 0.001);
-    const size  = Math.floor(Math.random() * 50000 + 100);
-    const side  = Math.random() > 0.5 ? 'buy' : 'sell';
-    addTapeRow(sym, price, size, side);
-  }
-
-  updateLatency();
 }
 
-// ─── INIT ─────────────────────────────────────────────────────────────────────
-initCharts();
-buildTickerStrip();
-selectSymbol('AAPL');
-renderWatchlist();
-renderPositions();
-renderBlotter();
-updateRiskSummary();
-updateClock();
+function startTraining() {
+  if (isRunning) return;
+  isRunning = true;
+  document.getElementById('btn-train').innerHTML = '<i data-lucide="pause"></i> Pause';
+  document.getElementById('btn-train').classList.add('running');
+  lucide.createIcons();
 
-// Timers
-setInterval(mainLoop, 800);
-setInterval(updateClock, 1000);
+  function loop() {
+    if (!isRunning) return;
+    runEpochs(getSpeed());
+    animFrame = requestAnimationFrame(loop);
+  }
+  animFrame = requestAnimationFrame(loop);
+}
 
-// Init Lucide icons
+function stopTraining() {
+  isRunning = false;
+  if (animFrame) cancelAnimationFrame(animFrame);
+  document.getElementById('btn-train').innerHTML = '<i data-lucide="play"></i> Train';
+  document.getElementById('btn-train').classList.remove('running');
+  lucide.createIcons();
+}
+
+// ── Event Listeners ──
+document.getElementById('btn-train').addEventListener('click', () => {
+  if (isRunning) stopTraining(); else startTraining();
+});
+
+document.getElementById('btn-step').addEventListener('click', () => {
+  stopTraining();
+  runEpochs(1);
+});
+
+document.getElementById('btn-reset').addEventListener('click', resetNetwork);
+
+document.getElementById('lr-slider').addEventListener('input', function () {
+  document.getElementById('lr-val').textContent = parseFloat(this.value).toFixed(3);
+});
+
+document.getElementById('hidden-slider').addEventListener('input', function () {
+  document.getElementById('hidden-val').textContent = this.value;
+  // Rebuild network immediately
+  resetNetwork();
+  document.getElementById('hidden-val').textContent = this.value;
+});
+
+document.getElementById('activation-select').addEventListener('change', () => {
+  resetNetwork();
+});
+
+document.getElementById('speed-slider').addEventListener('input', function () {
+  document.getElementById('speed-val').textContent = this.value + '×';
+});
+
+// ── Init ──
+initChart();
+resetNetwork();
 lucide.createIcons();
