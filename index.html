@@ -1,15 +1,405 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Untitled</title>
-    <link rel="stylesheet" href="/css/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Untitled</title>
+  <link rel="stylesheet" href="style.css">
+
+<link rel="stylesheet" href="https://yi.uat.digital.mss.uk.hsbc/cib-ui-toolkit/css/index.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
 </head>
-
 <body>
-    <script type="module" src="/js/main.js"></script>
-</body>
 
+<!-- TOP NAV BAR -->
+<header class="ts-topbar">
+  <div class="ts-topbar__left">
+    <div class="ts-logo">
+      <span class="ts-logo__mark">■</span>
+      <span class="ts-logo__name">BlnqTrade</span>
+      <span class="ts-logo__env">LIVE</span>
+    </div>
+    <nav class="ts-topnav">
+      <button class="ts-topnav__item ts-topnav__item--active">Equities</button>
+      <button class="ts-topnav__item">FX</button>
+      <button class="ts-topnav__item">Fixed Income</button>
+      <button class="ts-topnav__item">Derivatives</button>
+      <button class="ts-topnav__item">Commodities</button>
+    </nav>
+  </div>
+  <div class="ts-topbar__center">
+    <div class="ts-ticker-strip" id="tickerStrip"></div>
+  </div>
+  <div class="ts-topbar__right">
+    <div class="ts-session">
+      <span class="ts-session__label">Session</span>
+      <span class="ts-session__time" id="sessionTime">--:--:--</span>
+    </div>
+    <div class="ts-session__market">
+      <span class="ts-dot ts-dot--green"></span>
+      <span>NYSE Open</span>
+    </div>
+    <div class="ts-session__market">
+      <span class="ts-dot ts-dot--red"></span>
+      <span>LSE Closed</span>
+    </div>
+    <div class="ts-user">
+      <i data-lucide="user" class="ts-icon-sm"></i>
+      <span>J. Morgan</span>
+      <span class="ts-user__desk">EQ-NYC-01</span>
+    </div>
+    <button class="ts-icon-btn" aria-label="Settings"><i data-lucide="settings" class="ts-icon-sm"></i></button>
+    <button class="ts-icon-btn" aria-label="Alerts — 3 notifications"><i data-lucide="bell" class="ts-icon-sm"></i><span class="ts-badge" aria-hidden="true">3</span></button>
+  </div>
+</header>
+
+<!-- MAIN TRADING LAYOUT -->
+<main class="ts-main">
+
+  <!-- LEFT PANEL: WATCHLIST + POSITIONS -->
+  <aside class="ts-panel ts-panel--left">
+    <!-- Watchlist -->
+    <div class="ts-widget">
+      <div class="ts-widget__header">
+        <span class="ts-widget__title">Watchlist</span>
+        <div class="ts-widget__actions">
+          <button class="ts-icon-btn" aria-label="Add symbol"><i data-lucide="plus" class="ts-icon-sm"></i></button>
+          <button class="ts-icon-btn" aria-label="Filter watchlist"><i data-lucide="filter" class="ts-icon-sm"></i></button>
+        </div>
+      </div>
+      <div class="ts-search-bar">
+        <i data-lucide="search" class="ts-icon-sm ts-search-icon"></i>
+        <input type="text" placeholder="Search symbol..." class="ts-search-input" id="symbolSearch" />
+      </div>
+      <table class="ts-table ts-watchlist" id="watchlistTable">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th class="ts-num">Last</th>
+            <th class="ts-num">Chg%</th>
+            <th class="ts-num">Vol</th>
+          </tr>
+        </thead>
+        <tbody id="watchlistBody"></tbody>
+      </table>
+    </div>
+
+    <!-- Positions -->
+    <div class="ts-widget ts-widget--grow">
+      <div class="ts-widget__header">
+        <span class="ts-widget__title">Positions</span>
+        <div class="ts-pnl-total">
+          <span class="ts-pnl-label">Day P&L</span>
+          <span class="ts-pnl-value ts-positive" id="totalPnl">+$0</span>
+        </div>
+      </div>
+      <table class="ts-table" id="positionsTable">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th class="ts-num">Qty</th>
+            <th class="ts-num">Avg</th>
+            <th class="ts-num">P&L</th>
+          </tr>
+        </thead>
+        <tbody id="positionsBody"></tbody>
+      </table>
+    </div>
+  </aside>
+
+  <!-- CENTER: CHART + ORDER BOOK -->
+  <section class="ts-panel ts-panel--center">
+    <!-- Chart Header -->
+    <div class="ts-chart-header">
+      <div class="ts-chart-header__left">
+        <div class="ts-instrument-info" id="instrumentInfo">
+          <span class="ts-instrument-ticker" id="activeSymbol">AAPL</span>
+          <span class="ts-instrument-name" id="activeName">Apple Inc.</span>
+          <span class="ts-instrument-price" id="activePrice">--</span>
+          <span class="ts-instrument-change" id="activeChange">--</span>
+        </div>
+        <div class="ts-ohlc" id="ohlcBar">
+          <span>O: <b id="oOpen">--</b></span>
+          <span>H: <b id="oHigh">--</b></span>
+          <span>L: <b id="oLow">--</b></span>
+          <span>C: <b id="oClose">--</b></span>
+          <span>Vol: <b id="oVol">--</b></span>
+        </div>
+      </div>
+      <div class="ts-chart-header__right">
+        <div class="ts-timeframes">
+          <button class="ts-tf-btn" data-tf="1m">1m</button>
+          <button class="ts-tf-btn" data-tf="5m">5m</button>
+          <button class="ts-tf-btn ts-tf-btn--active" data-tf="15m">15m</button>
+          <button class="ts-tf-btn" data-tf="1h">1H</button>
+          <button class="ts-tf-btn" data-tf="1d">1D</button>
+          <button class="ts-tf-btn" data-tf="1w">1W</button>
+        </div>
+        <div class="ts-chart-types">
+          <button class="ts-icon-btn ts-icon-btn--active" id="chartTypeLine" aria-label="Line chart"><i data-lucide="trending-up" class="ts-icon-sm"></i></button>
+          <button class="ts-icon-btn" id="chartTypeBar" aria-label="Bar chart"><i data-lucide="bar-chart-2" class="ts-icon-sm"></i></button>
+          <button class="ts-icon-btn" id="chartTypeArea" aria-label="Area chart"><i data-lucide="area-chart" class="ts-icon-sm"></i></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Price Chart -->
+    <div class="ts-chart-container">
+      <canvas id="priceChart"></canvas>
+    </div>
+
+    <!-- Volume Chart -->
+    <div class="ts-volume-container">
+      <canvas id="volumeChart"></canvas>
+    </div>
+
+    <!-- Order Book + Trade Tape -->
+    <div class="ts-bottom-center">
+      <!-- Order Book -->
+      <div class="ts-widget ts-orderbook">
+        <div class="ts-widget__header">
+          <span class="ts-widget__title">Order Book</span>
+          <span class="ts-spread-badge" id="spreadBadge">Spread: --</span>
+        </div>
+        <div class="ts-orderbook__cols">
+          <div class="ts-orderbook__side ts-orderbook__side--ask">
+            <div class="ts-ob-head"><span>Size</span><span>Price</span></div>
+            <div id="askBook"></div>
+          </div>
+          <div class="ts-orderbook__mid" id="midPrice">--</div>
+          <div class="ts-orderbook__side ts-orderbook__side--bid">
+            <div class="ts-ob-head"><span>Price</span><span>Size</span></div>
+            <div id="bidBook"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Trade Tape -->
+      <div class="ts-widget ts-tradetape">
+        <div class="ts-widget__header">
+          <span class="ts-widget__title">Time & Sales</span>
+          <span class="ts-tape-filter">All</span>
+        </div>
+        <div class="ts-tape-head">
+          <span>Time</span><span>Price</span><span>Size</span><span>Side</span>
+        </div>
+        <div class="ts-tape-body" id="tradeTape"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RIGHT PANEL: ORDER ENTRY + BLOTTER -->
+  <aside class="ts-panel ts-panel--right">
+    <!-- Order Entry -->
+    <div class="ts-widget ts-order-entry">
+      <div class="ts-widget__header">
+        <span class="ts-widget__title">Order Entry</span>
+        <span class="ts-risk-status ts-risk-ok" id="riskStatus">
+          <i data-lucide="shield-check" class="ts-icon-sm"></i> Pre-Trade OK
+        </span>
+      </div>
+
+      <!-- Buy/Sell Toggle -->
+      <div class="ts-side-toggle">
+        <button class="ts-side-btn ts-side-btn--buy ts-side-btn--active" id="btnBuy">BUY</button>
+        <button class="ts-side-btn ts-side-btn--sell" id="btnSell">SELL</button>
+      </div>
+
+      <!-- Symbol Row -->
+      <div class="ts-field-row">
+        <label class="ts-label">Symbol</label>
+        <div class="ts-input-group">
+          <input type="text" class="ts-input ts-input--symbol" id="orderSymbol" value="AAPL" />
+          <input type="text" class="ts-input ts-input--name ts-text-dim" id="orderName" value="Apple Inc." readonly />
+        </div>
+      </div>
+
+      <!-- Order Type -->
+      <div class="ts-field-row">
+        <label class="ts-label">Order Type</label>
+        <select class="ts-select" id="orderType">
+          <option value="market">Market</option>
+          <option value="limit" selected>Limit</option>
+          <option value="stop">Stop</option>
+          <option value="stop_limit">Stop Limit</option>
+          <option value="twap">TWAP</option>
+          <option value="vwap">VWAP</option>
+          <option value="iceberg">Iceberg</option>
+        </select>
+      </div>
+
+      <!-- Quantity + Price -->
+      <div class="ts-field-row ts-field-row--2col">
+        <div>
+          <label class="ts-label">Quantity</label>
+          <input type="number" class="ts-input ts-input--mono" id="orderQty" value="1000" min="1" />
+        </div>
+        <div>
+          <label class="ts-label">Limit Price</label>
+          <input type="number" class="ts-input ts-input--mono" id="orderPrice" step="0.01" value="0" />
+        </div>
+      </div>
+
+      <!-- TIF + Account -->
+      <div class="ts-field-row ts-field-row--2col">
+        <div>
+          <label class="ts-label">TIF</label>
+          <select class="ts-select" id="orderTIF">
+            <option>Day</option>
+            <option>GTC</option>
+            <option>IOC</option>
+            <option>FOK</option>
+            <option>GTD</option>
+          </select>
+        </div>
+        <div>
+          <label class="ts-label">Destination</label>
+          <select class="ts-select" id="orderDest">
+            <option>NYSE</option>
+            <option>NASDAQ</option>
+            <option>LSE</option>
+            <option>DMA</option>
+            <option>Dark Pool</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Notional -->
+      <div class="ts-notional-bar">
+        <span class="ts-notional-label">Notional</span>
+        <span class="ts-notional-value" id="notionalValue">$0</span>
+        <span class="ts-notional-label">Buying Power</span>
+        <span class="ts-notional-value ts-positive" id="buyingPower">$12,450,000</span>
+      </div>
+
+      <!-- Risk Meters -->
+      <div class="ts-risk-bars">
+        <div class="ts-risk-bar-row">
+          <span class="ts-risk-bar-label">Risk Usage</span>
+          <div class="ts-progress-track"><div class="ts-progress-fill ts-progress-fill--ok" id="riskBar" style="width:34%"></div></div>
+          <span class="ts-risk-bar-pct" id="riskPct">34%</span>
+        </div>
+        <div class="ts-risk-bar-row">
+          <span class="ts-risk-bar-label">Position Limit</span>
+          <div class="ts-progress-track"><div class="ts-progress-fill ts-progress-fill--warn" id="posBar" style="width:61%"></div></div>
+          <span class="ts-risk-bar-pct" id="posPct">61%</span>
+        </div>
+      </div>
+
+      <!-- Submit Button -->
+      <div class="ts-order-actions">
+        <button class="ts-btn-order ts-btn-order--buy" id="submitOrder">
+          <i data-lucide="zap" class="ts-icon-sm"></i>
+          <span id="submitLabel">BUY 1,000 AAPL</span>
+        </button>
+        <button class="ts-btn-flat" id="clearOrder">Clear</button>
+      </div>
+    </div>
+
+    <!-- Orders Blotter -->
+    <div class="ts-widget ts-widget--grow">
+      <div class="ts-widget__header">
+        <span class="ts-widget__title">Orders</span>
+        <div class="ts-tabs-mini">
+          <button class="ts-tab-mini ts-tab-mini--active" data-tab="open">Open</button>
+          <button class="ts-tab-mini" data-tab="filled">Filled</button>
+          <button class="ts-tab-mini" data-tab="cancelled">Cancelled</button>
+        </div>
+      </div>
+      <div class="ts-blotter-body" id="blotterBody">
+        <table class="ts-table ts-blotter-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Sym</th>
+              <th>Side</th>
+              <th>Type</th>
+              <th>Qty</th>
+              <th>Price</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="blotterOpen"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Risk Summary -->
+    <div class="ts-widget ts-risk-widget">
+      <div class="ts-widget__header">
+        <span class="ts-widget__title">Risk Summary</span>
+        <span class="ts-risk-limit-badge">Desk: EQ-NYC-01</span>
+      </div>
+      <div class="ts-risk-grid">
+        <div class="ts-risk-card">
+          <span class="ts-risk-card__label">Gross Exposure</span>
+          <span class="ts-risk-card__value" id="grossExp">$8.2M</span>
+        </div>
+        <div class="ts-risk-card">
+          <span class="ts-risk-card__label">Net Exposure</span>
+          <span class="ts-risk-card__value" id="netExp">$3.1M</span>
+        </div>
+        <div class="ts-risk-card">
+          <span class="ts-risk-card__label">VaR (1d 95%)</span>
+          <span class="ts-risk-card__value ts-negative" id="varVal">-$142K</span>
+        </div>
+        <div class="ts-risk-card">
+          <span class="ts-risk-card__label">Beta</span>
+          <span class="ts-risk-card__value" id="betaVal">1.12</span>
+        </div>
+        <div class="ts-risk-card">
+          <span class="ts-risk-card__label">Delta</span>
+          <span class="ts-risk-card__value" id="deltaVal">+0.87</span>
+        </div>
+        <div class="ts-risk-card">
+          <span class="ts-risk-card__label">Sharpe</span>
+          <span class="ts-risk-card__value ts-positive" id="sharpeVal">1.84</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<!-- Status Bar -->
+<footer class="ts-statusbar">
+  <div class="ts-statusbar__left">
+    <span class="ts-status-item"><i data-lucide="activity" class="ts-icon-xs"></i> System: <b class="ts-positive">Online</b></span>
+    <span class="ts-status-item"><i data-lucide="wifi" class="ts-icon-xs"></i> Latency: <b id="latency">2ms</b></span>
+    <span class="ts-status-item"><i data-lucide="server" class="ts-icon-xs"></i> FIX: <b class="ts-positive">Connected</b></span>
+    <span class="ts-status-item"><i data-lucide="database" class="ts-icon-xs"></i> MDS: <b class="ts-positive">Live</b></span>
+  </div>
+  <div class="ts-statusbar__right">
+    <span class="ts-status-item" id="orderCount">Orders Today: <b>0</b></span>
+    <span class="ts-status-item" id="fillCount">Fills: <b>0</b></span>
+    <span class="ts-status-item">Trader: <b>J. Morgan</b></span>
+    <span class="ts-status-item">Book: <b>EQ-PROP-A</b></span>
+  </div>
+</footer>
+
+<!-- Order Confirmation Modal -->
+<div class="ts-modal-overlay" id="confirmModal" style="display:none">
+  <div class="ts-modal">
+    <div class="ts-modal__header">
+      <span class="ts-modal__title">Confirm Order</span>
+      <button class="ts-icon-btn" id="closeModal" aria-label="Close modal"><i data-lucide="x" class="ts-icon-sm"></i></button>
+    </div>
+    <div class="ts-modal__body" id="modalBody"></div>
+    <div class="ts-modal__footer">
+      <button class="ts-btn-secondary" id="cancelModal">Cancel</button>
+      <button class="ts-btn-primary" id="confirmOrderBtn">Confirm &amp; Send</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Notification -->
+<div class="ts-toast" id="toast" style="display:none"></div>
+
+  <script type="module" src="main.js"></script>
+</body>
 </html>
